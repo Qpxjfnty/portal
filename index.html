@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Private access.">
+  <title>Portal</title>
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <style>
+    :root { color-scheme: light; --ink: #0d172b; --muted: #596478; --blue: #0678f9; --line: #e0e4eb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #fff; color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+    main { max-width: 680px; padding: max(60px, env(safe-area-inset-top)) 28px 48px; margin: 0 auto; }
+    .brand { margin: 0 0 42px; font-size: 21px; font-weight: 650; letter-spacing: -.7px; }
+    h1 { margin: 0 0 18px; font-size: clamp(36px, 6vw, 52px); line-height: 1.08; font-weight: 700; letter-spacing: -1.8px; }
+    .intro { margin: 0; color: var(--muted); font-size: clamp(18px, 3vw, 25px); line-height: 1.45; letter-spacing: -.3px; }
+    .connection { display: flex; align-items: flex-start; gap: 12px; margin: 34px 0 22px; font-size: 16px; line-height: 1.5; }
+    .dot { flex: 0 0 11px; width: 11px; height: 11px; margin-top: 6px; border-radius: 100%; background: #8a94a6; }
+    .connection[data-state="ready"] .dot { background: #19ad68; }
+    .connection[data-state="unavailable"] .dot { background: #c47920; }
+    .open { display: flex; width: 100%; min-height: 58px; align-items: center; justify-content: center; gap: 16px; position: relative; border: 0; border-radius: 11px; padding: 16px 52px; background: var(--blue); color: #fff; font-size: 20px; font-weight: 600; line-height: 1.3; text-decoration: none; touch-action: manipulation; transition: background .15s ease; }
+    .open svg { position: absolute; right: 21px; width: 23px; height: 23px; }
+    .open:hover { background: #0067dc; }
+    .open[aria-disabled="true"] { background: #ecf0f6; color: #738095; cursor: default; }
+    a:focus-visible, button:focus-visible { outline: 3px solid #0d172b; outline-offset: 5px; }
+    .refresh { display: block; margin: 14px auto 0; padding: 12px 18px; min-height: 48px; background: transparent; color: var(--blue); border: 0; border-radius: 6px; font: 500 17px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; cursor: pointer; touch-action: manipulation; }
+    .refresh:disabled { color: #738095; cursor: wait; }
+    .help { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 25px; color: var(--muted); font-size: 16px; line-height: 1.6; }
+    .help p { margin: 0 0 18px; }
+    .help .bookmark { font-size: 14px; margin-bottom: 0; }
+    .unavailable-note { margin: -8px 0 20px; color: var(--muted); font-size: 15px; line-height: 1.5; }
+    [hidden] { display: none !important; }
+    @media (min-width: 700px) { main { padding-top: 84px; } .brand { margin-bottom: 46px; } .open { min-height: 72px; font-size: 24px; } .refresh { font-size: 20px; } .connection { font-size: 19px; } .dot { margin-top: 8px; } .help { font-size: 18px; } .help .bookmark { font-size: 16px; } }
+    @media (prefers-reduced-motion: reduce) { .open { transition: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="brand">Portal</p>
+    <h1>Welcome back.</h1>
+    <p class="intro">Continue to your private workspace.</p>
+    <div id="connection" class="connection" data-state="loading" role="status" aria-live="polite" aria-atomic="true">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="status">Finding your connection…</span>
+    </div>
+    <p id="unavailable-note" class="unavailable-note" hidden>Keep your Mac awake and online. This page checks again automatically, or you can try now.</p>
+    <a id="open" class="open" role="link" aria-disabled="true" tabindex="-1" referrerpolicy="no-referrer" rel="noreferrer noopener">
+      <span>Continue</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15M13 5l7 7-7 7"/></svg>
+    </a>
+    <button id="refresh" class="refresh" type="button">Check connection</button>
+    <footer class="help">
+      <p>Keep your Mac awake and online. You’ll sign in securely when the app opens.</p>
+      <p class="bookmark">Bookmark this page for next time.</p>
+    </footer>
+    <noscript><p class="help">JavaScript is required to find the current Portal connection. Enable it and reload this page.</p></noscript>
+  </main>
+  <script type="module">
+    const status = document.getElementById('status');
+    const connection = document.getElementById('connection');
+    const open = document.getElementById('open');
+    const refresh = document.getElementById('refresh');
+    const note = document.getElementById('unavailable-note');
+    // Accept only a bare Cloudflare quick-tunnel HTTPS origin. No userinfo,
+    // port, path, query, fragment, subdomain nesting, or URL normalization.
+    const allowedOrigin = /^https:\/\/[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com$/;
+    let checking = null;
+
+    function disableOpen() {
+      open.removeAttribute('href');
+      open.setAttribute('aria-disabled', 'true');
+      open.tabIndex = -1;
+    }
+
+    async function verifyConnection() {
+      refresh.disabled = true;
+      // Keep a healthy button stable during background checks. Clicking it waits
+      // for a fresh check, so it cannot navigate using an unverified old address.
+      if (connection.dataset.state !== 'ready') {
+        disableOpen();
+        connection.dataset.state = 'loading';
+        status.textContent = 'Checking your connection…';
+        note.hidden = true;
+      }
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch(`./connection.json?t=${Date.now()}`, {
+          cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer',
+          redirect: 'error', signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Unavailable');
+        const data = await response.json();
+        if (!data || typeof data.origin !== 'string' || !allowedOrigin.test(data.origin)) {
+          throw new Error('Invalid connection');
+        }
+        const probe = await fetch(data.origin + '/api/health', {
+          mode: 'cors', credentials: 'omit', cache: 'no-store',
+          referrerPolicy: 'no-referrer', redirect: 'error', signal: controller.signal,
+        });
+        if (!probe.ok || !probe.headers.get('content-type')?.includes('application/json')) {
+          throw new Error('Unavailable');
+        }
+        const health = await probe.json();
+        if (!health || health.status !== 'ok' || health.version !== '0.2.0' ||
+            Object.keys(health).length !== 2) throw new Error('Unexpected service');
+        open.href = data.origin + '/';
+        open.removeAttribute('aria-disabled');
+        open.tabIndex = 0;
+        connection.dataset.state = 'ready';
+        status.textContent = 'Ready to continue';
+        note.hidden = true;
+        return data.origin;
+      } catch {
+        disableOpen();
+        connection.dataset.state = 'unavailable';
+        status.textContent = 'Your Mac is offline or reconnecting';
+        note.hidden = false;
+        return null;
+      } finally {
+        clearTimeout(timeout);
+        refresh.disabled = false;
+      }
+    }
+    function checkConnection() {
+      if (!checking) checking = verifyConnection().finally(() => { checking = null; });
+      return checking;
+    }
+    open.addEventListener('click', async event => {
+      event.preventDefault();
+      if (open.getAttribute('aria-disabled') === 'true') return;
+      const origin = await checkConnection();
+      if (origin) location.assign(origin + '/');
+    });
+    refresh.addEventListener('click', checkConnection);
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) checkConnection();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) checkConnection();
+    });
+    setInterval(() => {
+      if (!document.hidden) checkConnection();
+    }, 30000);
+    checkConnection();
+  </script>
+</body>
+</html>
