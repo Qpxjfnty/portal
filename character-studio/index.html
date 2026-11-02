@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title></title>
+  <style>body{background:#fff;color:#222;font:14px -apple-system,BlinkMacSystemFont,sans-serif}p{max-width:28em;line-height:1.5}[hidden]{display:none!important}</style>
+</head>
+<body>
+  <input type="file" accept=".json,application/json" aria-label="Connecting to the access-key upload" disabled>
+  <p id="status" role="status" hidden></p>
+  <noscript>JavaScript is required to connect.</noscript>
+  <script type="module">
+    const status = document.getElementById('status');
+    const allowedOrigin = /^https:\/\/[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com$/;
+    let checking = false;
+    let leaving = false;
+    async function connect() {
+      if (checking || leaving) return;
+      checking = true;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      try {
+        const options = { cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer', redirect:'error', signal:controller.signal };
+        const response = await fetch(`./connection.json?t=${Date.now()}`, options);
+        if (!response.ok) throw new Error();
+        const connection = await response.json();
+        if (!allowedOrigin.test(connection?.origin || '')) throw new Error();
+        const probe = await fetch(`${connection.origin}/api/health`, {...options,mode:'cors'});
+        if (!probe.ok || !probe.headers.get('content-type')?.includes('application/json')) throw new Error();
+        const health = await probe.json();
+        if (health?.status !== 'ok' || health?.service !== 'character-studio') throw new Error();
+        leaving = true;
+        location.replace(`${connection.origin}/`);
+      } catch {
+        status.textContent = 'Connecting… Keep the host Mac plugged in and connected to the internet. This page will retry automatically.';
+        status.hidden = false;
+      } finally { checking = false; clearTimeout(timeout); }
+    }
+    window.addEventListener('online', connect);
+    window.addEventListener('pageshow', event => {if(event.persisted){leaving=false;connect();}});
+    document.addEventListener('visibilitychange', () => {if(!document.hidden)connect();});
+    setInterval(() => {if(!document.hidden)connect();},15000);
+    connect();
+  </script>
+</body>
+</html>
