@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' https://*.trycloudflare.com; base-uri 'none'; form-action 'none'">
+<title>Scene Simulator</title>
+<style>
+body { margin: 0; background: #fff; color: #333; font: 16px/1.5 system-ui, sans-serif; }
+main { min-height: 80vh; display: grid; place-content: center; padding: 24px; text-align: center; }
+button { font: inherit; padding: 10px 18px; color: inherit; background: #fff; border: 1px solid #999; border-radius: 6px; cursor: pointer; }
+button:focus-visible { outline: 3px solid #254fa9; outline-offset: 3px; }
+p { max-width: 32rem; }
+</style>
+<main><p id="status" role="status">Connecting to your Mac…</p><button id="retry" type="button" hidden>Try again</button></main>
+<script>
+"use strict";
+const originPattern = /^https:\/\/[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com$/;
+const status = document.getElementById("status");
+const retry = document.getElementById("retry");
+let connecting = false;
+let timer;
+async function connect() {
+  if (connecting || document.hidden) return;
+  connecting = true;
+  clearTimeout(timer);
+  status.textContent = "Connecting to your Mac…";
+  retry.hidden = true;
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 10000);
+  try {
+    const settings = { cache: "no-store", credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: controller.signal };
+    const pointer = await fetch("connection.json?time=" + Date.now(), settings);
+    if (!pointer.ok) throw new Error("Unavailable");
+    const record = await pointer.json();
+    if (typeof record.origin !== "string" || !originPattern.test(record.origin)) throw new Error("Unavailable");
+    const response = await fetch(record.origin + "/api/health", settings);
+    if (!response.ok) throw new Error("Unavailable");
+    const health = await response.json();
+    if (!health || Object.keys(health).length !== 2 || health.status !== "ok" || health.app !== "scene-simulator-2") throw new Error("Unavailable");
+    location.replace(record.origin);
+  } catch {
+    status.textContent = "Your Mac is not reachable yet. Keep it awake and online.";
+    retry.hidden = false;
+    timer = setTimeout(connect, 15000);
+  } finally {
+    clearTimeout(deadline);
+    connecting = false;
+  }
+}
+retry.addEventListener("click", connect);
+addEventListener("online", connect);
+addEventListener("pageshow", connect);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) connect(); });
+connect();
+</script>
+</html>
