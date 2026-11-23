@@ -7,14 +7,30 @@
   <meta name="robots" content="noindex,nofollow,noarchive">
   <title></title>
   <style>body{background:#fff;color:#222;font:14px -apple-system,BlinkMacSystemFont,sans-serif}p{max-width:28em;line-height:1.5}[hidden]{display:none!important}</style>
+  <style>#choices{max-width:24rem}#choices a{display:block;padding:.8rem .5rem}</style>
 </head>
 <body>
   <input type="file" accept=".json,application/json" aria-label="Connecting to the access-key upload" disabled>
+  <nav id="choices" aria-label="Character Studio destinations" hidden>
+    <h1>Character Studio</h1>
+    <a href="?variant=prefill" data-pointer="prefill-connection.json">Prefill</a>
+    <a href="?variant=original" data-pointer="connection.json">Original</a>
+    <a href="?variant=identity" data-pointer="identity-connection.json">Identity</a>
+    <a href="?variant=studio" data-pointer="studio-connection.json">Studio</a>
+    <a href="?variant=creator" data-pointer="creator-connection.json">Creator</a>
+    <a href="?variant=height" data-pointer="height-connection.json">Height</a>
+  </nav>
   <p id="status" role="status" hidden></p>
   <noscript>JavaScript is required to connect.</noscript>
   <script type="module">
     const status = document.getElementById('status');
     const allowedOrigin = /^https:\/\/[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com$/;
+    const choices = document.getElementById('choices');
+    const requested = new URLSearchParams(location.search).get('variant') ?? 'prefill';
+    const selectedLink = Array.from(choices.querySelectorAll('a')).find(
+      link => link.getAttribute('href') === `?variant=${requested}`
+    );
+    const pointer = selectedLink?.dataset.pointer;
     let checking = false;
     let leaving = false;
     async function connect() {
@@ -24,7 +40,7 @@
       const timeout = setTimeout(() => controller.abort(), 10000);
       try {
         const options = { cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer', redirect:'error', signal:controller.signal };
-        const response = await fetch(`./prefill-connection.json?t=${Date.now()}`, options);
+        const response = await fetch(`./${pointer}?t=${Date.now()}`, options);
         if (!response.ok) throw new Error();
         const connection = await response.json();
         if (!allowedOrigin.test(connection?.origin || '')) throw new Error();
@@ -39,11 +55,20 @@
         status.hidden = false;
       } finally { checking = false; clearTimeout(timeout); }
     }
-    window.addEventListener('online', connect);
-    window.addEventListener('pageshow', event => {if(event.persisted){leaving=false;connect();}});
-    document.addEventListener('visibilitychange', () => {if(!document.hidden)connect();});
-    setInterval(() => {if(!document.hidden)connect();},15000);
-    connect();
+    if (pointer) {
+      window.addEventListener('online', connect);
+      window.addEventListener('pageshow', event => {if(event.persisted){leaving=false;connect();}});
+      document.addEventListener('visibilitychange', () => {if(!document.hidden)connect();});
+      setInterval(() => {if(!document.hidden)connect();},15000);
+      connect();
+    } else {
+      document.querySelector('input[type="file"]').hidden = true;
+      choices.hidden = false;
+      if (requested !== 'menu') {
+        status.textContent = 'Unknown destination. Choose a Character Studio destination above.';
+        status.hidden = false;
+      }
+    }
   </script>
 </body>
 </html>
